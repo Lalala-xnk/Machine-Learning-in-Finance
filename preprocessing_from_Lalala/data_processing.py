@@ -5,9 +5,8 @@ import numpy as np
 import re
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
+from time import *
 
 
 def read_csv(path):
@@ -30,15 +29,18 @@ def drop_post_feature(df):
 
 
 def drop_missing_feature(df):
-    len_ = len(df)
-    missing_feature = [name for name in df.columns if (df[name].isna().sum() * 1.0 / len(df)) > 0.95]
+    # len_ = len(df)
+    missing_feature_90 = [name for name in df.columns if (df[name].isna().sum() * 1.0 / len(df)) > 0.9]
+    missing_feature_10 = [name for name in df.columns if (df[name].isna().sum() * 1.0 / len(df)) < 0.1]
     try:
-        df.drop(missing_feature, axis=1, inplace=True)
+        df.drop(missing_feature_90, axis=1, inplace=True)
+        df.dropna(axis=0, how='any', subset=missing_feature_10)
         print('missing features dropped')
-        print('missing per:', len(missing_feature) * 1.0 / len_)
+        # print('missing per:', len(missing_feature_90) * 1.0 / len_)
     except KeyError:
         print('no missing features')
-    df.fillna(0, inplace=True)
+
+    df.fillna(999, inplace=True)
     return df
 
 
@@ -47,14 +49,16 @@ def format_data(df):
     df['int_rate'] = [float(re.sub(r'\D', '', int_rate)) / 100.0 for int_rate in df['int_rate']]
     df['emp_length'] = [float(re.sub(r'\D', '', str(emp_length))) for emp_length in df['emp_length']]
     df['revol_util'] = [float(re.sub(r'\D', '', revol_util)) / 100.0 for revol_util in df['revol_util']]
-    df['loan_status'] = [0 if str(loan_status) in ['Fully Paid', 'In Grace Period'] else 1
+    df['loan_status'] = [0 if str(loan_status) in ['Fully Paid', 'In Grace Period', 'Current'] else 1
                          for loan_status in df['loan_status']]
+    df['issue_d'] = [mktime(strptime(issue_d, '%b-%Y')) if issue_d else 0 for issue_d in df['issue_d']]
+    df['earliest_cr_line'] = [mktime(strptime(earliest_cr_line, '%b-%Y')) if earliest_cr_line else 0
+                              for earliest_cr_line in df['earliest_cr_line']]
+    df['sub_grade'] = [ord(sub_grade[0]) - 64 + (int(sub_grade[1]) - 1) / 5.0 for sub_grade in df['sub_grade']]
+    df.drop(['grade', 'zip_code'], axis=1, inplace=True)
 
-    df.drop(['issue_d', 'zip_code', 'earliest_cr_line'], axis=1, inplace=True)
-
-    name_list = ['grade', 'sub_grade', 'home_ownership', 'emp_title', 'verification_status', 'purpose', 'title',
-                 'hardship_flag', 'disbursement_method', 'debt_settlement_flag', 'pymnt_plan', 'addr_state',
-                 'application_type']
+    name_list = ['home_ownership', 'emp_title', 'verification_status', 'purpose', 'title', 'hardship_flag',
+                 'disbursement_method', 'debt_settlement_flag', 'pymnt_plan', 'addr_state', 'application_type']
     for name in name_list:
         df[name] = pd.factorize(df[name])[0].astype(float)
 
@@ -75,7 +79,7 @@ def dimension_reduction(df):
     pca = PCA()
     pca.fit(df_scaled)
 
-    explained_var_ratio = pca.explained_variance_ratio_
+    # explained_var_ratio = pca.explained_variance_ratio_
     plt.plot(range(len(pca.explained_variance_ratio_)), pca.explained_variance_ratio_)
     plt.show()
 
@@ -84,9 +88,9 @@ def dimension_reduction(df):
     #     if explained_var_ratio[i] > 10 * explained_var_ratio[i + 1]:
     #         break
 
-    i = min(np.argwhere(explained_var_ratio < 0.01))[0]
+    # i = min(np.argwhere(explained_var_ratio < 0.01))[0]
 
-    pca = PCA(n_components=i)
+    pca = PCA(n_components=0.9)
     pca.fit(df_scaled)
     df = pd.DataFrame(pca.transform(df_scaled))
 
