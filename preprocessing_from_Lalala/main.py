@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import data_processing as dp
+import pandas as pd
 
 path = 'LoanStats_2017Q1.csv'
 
@@ -12,7 +13,14 @@ if __name__ == '__main__':
 
     df_target = df['loan_status']
     df_training = df.drop(['loan_status'], axis=1)
-    # print(df_training)
     df_training = dp.dimension_reduction(df_training)
-    print(len(list(df_training)))
-    # print(df_training)
+    df = pd.concat([df_training, df_target], axis=0)
+
+    df_training = dp.vif(df_training, 10)
+    newDF, woeDF = dp.iv_woe(df, 'loan_status')
+    del_feas = newDF[newDF.IV < 0.01].Variable.tolist()
+    df = df.drop(del_feas, axis=1)
+    df_target = df['loan_status']
+    df_training = df.drop(['loan_status'], axis=1)
+
+    df_training = dp.feature_engineering(df_training, df_target)

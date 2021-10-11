@@ -2,3 +2,12 @@ issue_d: i add this
 emp_length: im wrong
 addr_state: simply drop it
 earliest_cr_line: i add this
+
+annual_inc: large extreme values
+dti: large extreme values
+mths_since_last_delinq: 2 values
+mths_since_last_record: 2 values
+pub_rec: large extreme values
+revol_bal: large extreme values
+il_util: 2 values
+mths_since_last_major_derog: 2 values

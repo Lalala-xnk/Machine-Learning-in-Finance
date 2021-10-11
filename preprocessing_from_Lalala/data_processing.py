@@ -2,11 +2,15 @@
 
 import pandas as pd
 import numpy as np
+from collections import Counter
+from math import sqrt
 import re
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
+from statsmodels.stats.outliers_influence import variance_inflation_factor as VIF
 from time import *
+from scipy.stats import chi2_contingency
 from scipy.stats import mode
 import warnings
 
@@ -52,16 +56,20 @@ def drop_missing_feature(df):
 def format_data(df):
     df['term'] = [float(re.sub(r'\D', '', term)) for term in df['term']]
     df['int_rate'] = [float(re.sub(r'\D', '', int_rate)) / 100.0 for int_rate in df['int_rate']]
-    df['emp_length'] = [float(re.sub(r'\D', '', str(emp_length))) for emp_length in df['emp_length']]
+    # df['emp_length'] = [float(re.sub(r'\D', '', str(emp_length))) for emp_length in df['emp_length']]
     df['revol_util'] = [float(re.sub(r'\D', '', str(revol_util))) / 100.0 for revol_util in df['revol_util']]
     df['loan_status'] = [0 if str(loan_status) in ['Fully Paid', 'In Grace Period', 'Current'] else 1
                          for loan_status in df['loan_status']]
-    df['issue_d'] = [mktime(strptime(issue_d, '%b-%Y')) if issue_d else 0 for issue_d in df['issue_d']]
-    df['earliest_cr_line'] = [mktime(strptime(earliest_cr_line, '%b-%Y')) if earliest_cr_line else 0
+    df['issue_d'] = [int(mktime(strptime(issue_d, '%b-%Y')) / 1e8) if issue_d else 0 for issue_d in df['issue_d']]
+    df['earliest_cr_line'] = [int(mktime(strptime(earliest_cr_line, '%b-%Y')) / 1e8) if earliest_cr_line else 0
                               for earliest_cr_line in df['earliest_cr_line']]
     df['sub_grade'] = [ord(sub_grade[0]) - 64 + (int(sub_grade[1]) - 1) / 5.0 for sub_grade in df['sub_grade']]
-    df['zip_code'] = [int(str(zip_code)[:3]) for zip_code in df['zip_code']]
-    df.drop(['grade', 'addr_state', 'emp_title'], axis=1, inplace=True)
+    # df['zip_code'] = [int(str(zip_code)[:2]) for zip_code in df['zip_code']]
+    df.drop(['grade', 'zip_code', 'emp_title'], axis=1, inplace=True)
+
+    df.emp_length.replace({"< 1 year": 0, "1 year": 1, "2 years": 2, "3 years": 3,
+                           "4 years": 4, "5 years": 5, "6 years": 6, "7 years": 7,
+                           "8 years": 8, "9 years": 9, "10+ years": 10, 'n/a': 0}, inplace=True)
 
     # binning_list = []
     # for col in list(df.columns):
@@ -69,7 +77,7 @@ def format_data(df):
     #         binning_list.append(col)
 
     name_list = ['home_ownership', 'verification_status', 'purpose', 'title', 'hardship_flag', 'disbursement_method',
-                 'debt_settlement_flag', 'pymnt_plan', 'application_type']
+                 'debt_settlement_flag', 'pymnt_plan', 'addr_state', 'application_type']
     for name in name_list:
         df[name] = pd.factorize(df[name])[0].astype(float)
 
@@ -111,3 +119,156 @@ def dimension_reduction(df):
     # df = pd.DataFrame(pca.transform(df_scaled))
 
     return df
+
+
+def vif(x, threshold):
+    x_m = np.matrix(x)
+    vif_list = [VIF(x_m, i) for i in range(x_m.shape[1])]
+    maxvif = pd.DataFrame(vif_list, index=x.columns, columns=["vif"])
+    col_save = list(maxvif[maxvif.vif <= float(threshold)].index)
+    return x[col_save]
+
+
+def feature_engineering(df_training, df_target):
+    binning_feature = []
+    for col in df_training.columns:
+        if df_training[col].nunique() > 15:
+            binning_feature.append(col)
+
+    for feature in binning_feature:
+        splits = min(50, df_training[feature].nunique())
+        n = df_training[feature].nunique()
+        df_training[feature] = chi_merge(df_training[feature], df_target, splits=splits, max_pvalue=0.05)
+        print(feature + ':', n, df_training[feature].nunique())
+
+    # for feature in binning_feature:
+    #     # print(feature, sqrt(df[feature].var()) * 1.0 / df[feature].mean())
+    #     plt.plot(list(df[feature].sort_values()))
+    #     plt.title(feature + str(sqrt(df[feature].var()) * 1.0 / df[feature].mean()))
+    #     plt.show()
+
+    # tmp = df['mths_since_last_delinq'][df['mths_since_last_delinq'] < 1000]
+    # plt.plot(list(tmp.sort_values()))
+    # plt.show()
+
+    return df_training
+
+
+def tagcount(series, tags):
+    result = []
+    countseries = series.value_counts()
+    for tag in tags:
+        try:
+            result.append(countseries[tag])
+        except:
+            result.append(0)
+    return result
+
+
+def chi_merge(feature, target, splits, max_pvalue=0.1, max_iter=15, min_iter=2):
+    tags = [0, 1]
+    percent = feature.quantile([1.0 * i / splits for i in range(splits + 1)], interpolation="lower")\
+        .drop_duplicates(keep="last").tolist()
+    percent = percent[1:]
+    np_regroup = []
+    for i in range(len(percent)):
+        if i == 0:
+            tmp = tagcount(target[feature <= percent[i]], tags)
+            tmp.insert(0, percent[i])
+        elif i == len(percent) - 1:
+            tmp = tagcount(target[feature > percent[i - 1]], tags)
+            tmp.insert(0, percent[i])
+        else:
+            tmp = tagcount(target[(feature > percent[i - 1]) & (feature <= percent[i])], tags)
+            tmp.insert(0, percent[i])
+        np_regroup.append(tmp)
+    np_regroup = pd.DataFrame(np_regroup)
+    np_regroup = np.array(np_regroup)
+
+    i = 0
+    while i <= np_regroup.shape[0] - 2:
+        check = 0
+        for j in range(len(tags)):
+            if np_regroup[i, j + 1] == 0 and np_regroup[i + 1, j + 1] == 0:
+                check += 1
+        if check > 0:
+            np_regroup[i, 1:] = np_regroup[i, 1:] + np_regroup[i + 1, 1:]
+            np_regroup[i, 0] = np_regroup[i + 1, 0]
+            np_regroup = np.delete(np_regroup, i + 1, 0)
+            i = i - 1
+        i = i + 1
+
+    chi_table = np.array([])
+    for i in np.arange(np_regroup.shape[0] - 1):
+        temparray = np_regroup[i:i + 2, 1:]
+        pvalue = chi2_contingency(temparray, correction=False)[1]
+        chi_table = np.append(chi_table, pvalue)
+    temp = max(chi_table)
+
+    while True:
+        if len(chi_table) < max_iter and temp <= max_pvalue:
+            break
+        if len(chi_table) < min_iter:
+            break
+
+        num = np.argwhere(chi_table == temp)
+        for i in range(num.shape[0] - 1, -1, -1):
+            chi_min_index = num[i][0]
+            np_regroup[chi_min_index, 1:] = np_regroup[chi_min_index, 1:] + np_regroup[chi_min_index + 1, 1:]
+            np_regroup[chi_min_index, 0] = np_regroup[chi_min_index + 1, 0]
+
+            np_regroup = np.delete(np_regroup, chi_min_index + 1, 0)
+
+            if chi_min_index == np_regroup.shape[0] - 1:
+                temparray = np_regroup[chi_min_index - 1:chi_min_index + 1, 1:]
+                chi_table[chi_min_index - 1] = chi2_contingency(temparray, correction=False)[1]
+                chi_table = np.delete(chi_table, chi_min_index, axis=0)
+
+            elif chi_min_index == 0:
+                temparray = np_regroup[chi_min_index:chi_min_index + 2, 1:]
+                chi_table[chi_min_index] = chi2_contingency(temparray, correction=False)[1]
+                chi_table = np.delete(chi_table, chi_min_index + 1, axis=0)
+
+            else:
+                temparray = np_regroup[chi_min_index - 1:chi_min_index + 1, 1:]
+                chi_table[chi_min_index - 1] = chi2_contingency(temparray, correction=False)[1]
+                temparray = np_regroup[chi_min_index:chi_min_index + 2, 1:]
+                chi_table[chi_min_index] = chi2_contingency(temparray, correction=False)[1]
+                chi_table = np.delete(chi_table, chi_min_index + 1, axis=0)
+
+        temp = max(chi_table)
+
+    val = 0
+    feature = feature.apply(lambda x: val if x <= np_regroup[0, 0] else x)
+    val += 1
+    for i in range(1, np_regroup.shape[0] - 1):
+        feature = feature.apply(lambda x: val if np_regroup[i - 1, 0] < x <= np_regroup[i, 0] else x)
+        val += 1
+    feature = feature.apply(lambda x: val if x > np_regroup[np_regroup.shape[0] - 2, 0] else x)
+
+    return feature
+
+
+def iv_woe(data, target, bins=10):
+    newDF, woeDF = pd.DataFrame(), pd.DataFrame()
+    cols = data.columns
+    for ivars in cols[~cols.isin([target])]:
+        # 数据类型在bifc中、且数据>10则分箱
+        if (data[ivars].dtype.kind in 'bifc') and (len(np.unique(data[ivars])) > 10):
+            binned_x = pd.qcut(data[ivars], bins, duplicates='drop')
+            d0 = pd.DataFrame({'x': binned_x, 'y': data[target]})
+        else:
+            d0 = pd.DataFrame({'x': data[ivars], 'y': data[target]})
+        d = d0.groupby("x", as_index=False).agg({"y": ["count", "sum"]})
+        d.columns = ['Cutoff', 'N', 'Events']
+        d['% of Events'] = np.maximum(d['Events'], 0.5) / d['Events'].sum()
+        d['Non-Events'] = d['N'] - d['Events']
+        d['% of Non-Events'] = np.maximum(d['Non-Events'], 0.5) / d['Non-Events'].sum()
+        d['WoE'] = np.log(d['% of Events'] / d['% of Non-Events'])
+        d['IV'] = d['WoE'] * (d['% of Events'] - d['% of Non-Events'])
+        d.insert(loc=0, column='Variable', value=ivars)
+#        print("Information value of " + ivars + " is " + str(round(d['IV'].sum(), 6)))
+        temp = pd.DataFrame({"Variable": [ivars], "IV": [d['IV'].sum()]}, columns=["Variable", "IV"])
+        newDF = pd.concat([newDF, temp], axis=0)
+        woeDF = pd.concat([woeDF, d], axis=0)
+    return newDF, woeDF
