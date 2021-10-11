@@ -14,4 +14,5 @@ if __name__ == '__main__':
     df_training = df.drop(['loan_status'], axis=1)
     # print(df_training)
     df_training = dp.dimension_reduction(df_training)
+    print(len(list(df_training)))
     # print(df_training)
