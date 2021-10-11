@@ -29,18 +29,16 @@ def drop_post_feature(df):
 
 
 def drop_missing_feature(df):
-    # len_ = len(df)
     missing_feature_90 = [name for name in df.columns if (df[name].isna().sum() * 1.0 / len(df)) > 0.9]
     missing_feature_10 = [name for name in df.columns if (df[name].isna().sum() * 1.0 / len(df)) < 0.1]
     try:
         df.drop(missing_feature_90, axis=1, inplace=True)
         df.dropna(axis=0, how='any', subset=missing_feature_10)
         print('missing features dropped')
-        # print('missing per:', len(missing_feature_90) * 1.0 / len_)
     except KeyError:
         print('no missing features')
 
-    df.fillna(999, inplace=True)
+    df.fillna(9999, inplace=True)
     return df
 
 
@@ -48,17 +46,23 @@ def format_data(df):
     df['term'] = [float(re.sub(r'\D', '', term)) for term in df['term']]
     df['int_rate'] = [float(re.sub(r'\D', '', int_rate)) / 100.0 for int_rate in df['int_rate']]
     df['emp_length'] = [float(re.sub(r'\D', '', str(emp_length))) for emp_length in df['emp_length']]
-    df['revol_util'] = [float(re.sub(r'\D', '', revol_util)) / 100.0 for revol_util in df['revol_util']]
+    df['revol_util'] = [float(re.sub(r'\D', '', str(revol_util))) / 100.0 for revol_util in df['revol_util']]
     df['loan_status'] = [0 if str(loan_status) in ['Fully Paid', 'In Grace Period', 'Current'] else 1
                          for loan_status in df['loan_status']]
     df['issue_d'] = [mktime(strptime(issue_d, '%b-%Y')) if issue_d else 0 for issue_d in df['issue_d']]
     df['earliest_cr_line'] = [mktime(strptime(earliest_cr_line, '%b-%Y')) if earliest_cr_line else 0
                               for earliest_cr_line in df['earliest_cr_line']]
     df['sub_grade'] = [ord(sub_grade[0]) - 64 + (int(sub_grade[1]) - 1) / 5.0 for sub_grade in df['sub_grade']]
-    df.drop(['grade', 'zip_code'], axis=1, inplace=True)
+    df['zip_code'] = [int(str(zip_code)[:3]) for zip_code in df['zip_code']]
+    df.drop(['grade', 'addr_state'], axis=1, inplace=True)
 
-    name_list = ['home_ownership', 'emp_title', 'verification_status', 'purpose', 'title', 'hardship_flag',
-                 'disbursement_method', 'debt_settlement_flag', 'pymnt_plan', 'addr_state', 'application_type']
+    binning_list = []
+    for col in list(df.columns):
+        if type(df[col][0]) == str and int(df[col].nunique()) >= 100:
+            binning_list.append(col)
+
+    name_list = ['home_ownership', 'verification_status', 'purpose', 'title', 'hardship_flag', 'disbursement_method',
+                 'debt_settlement_flag', 'pymnt_plan', 'application_type']
     for name in name_list:
         df[name] = pd.factorize(df[name])[0].astype(float)
 
