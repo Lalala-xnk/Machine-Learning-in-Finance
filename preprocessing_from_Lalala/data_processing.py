@@ -60,12 +60,12 @@ def format_data(df):
     df['revol_util'] = [float(re.sub(r'\D', '', str(revol_util))) / 100.0 for revol_util in df['revol_util']]
     df['loan_status'] = [0 if str(loan_status) in ['Fully Paid', 'In Grace Period', 'Current'] else 1
                          for loan_status in df['loan_status']]
-    df['issue_d'] = [int(mktime(strptime(issue_d, '%b-%Y')) / 1e8) if issue_d else 0 for issue_d in df['issue_d']]
-    df['earliest_cr_line'] = [int(mktime(strptime(earliest_cr_line, '%b-%Y')) / 1e8) if earliest_cr_line else 0
-                              for earliest_cr_line in df['earliest_cr_line']]
+    # df['issue_d'] = [int(mktime(strptime(issue_d, '%b-%Y')) / 1e8) if issue_d else 0 for issue_d in df['issue_d']]
+    # df['earliest_cr_line'] = [int(mktime(strptime(earliest_cr_line, '%b-%Y')) / 1e8) if earliest_cr_line else 0
+    #                           for earliest_cr_line in df['earliest_cr_line']]
     df['sub_grade'] = [ord(sub_grade[0]) - 64 + (int(sub_grade[1]) - 1) / 5.0 for sub_grade in df['sub_grade']]
     # df['zip_code'] = [int(str(zip_code)[:2]) for zip_code in df['zip_code']]
-    df.drop(['grade', 'zip_code', 'emp_title'], axis=1, inplace=True)
+    df.drop(['grade', 'zip_code', 'emp_title', 'issue_d', 'earliest_cr_line'], axis=1, inplace=True)
 
     df.emp_length.replace({"< 1 year": 0, "1 year": 1, "2 years": 2, "3 years": 3,
                            "4 years": 4, "5 years": 5, "6 years": 6, "7 years": 7,
