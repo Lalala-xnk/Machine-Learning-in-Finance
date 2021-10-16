@@ -2,16 +2,9 @@
 
 import pandas as pd
 import numpy as np
-from collections import Counter
-from math import sqrt
 import re
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
 from statsmodels.stats.outliers_influence import variance_inflation_factor as VIF
-from time import *
-from scipy.stats import chi2_contingency
-from scipy.stats import mode
+from scipy.stats import mode, chi2_contingency
 import warnings
 
 warnings.filterwarnings('ignore')
@@ -276,3 +269,41 @@ def iv_woe(data, target, bins=10):
         newDF = pd.concat([newDF, temp], axis=0)
         woeDF = pd.concat([woeDF, d], axis=0)
     return newDF, woeDF
+
+
+def data_processing(path_train, path_test):
+    df_train = read_csv(path_train)
+    df_test = read_csv(path_test)
+
+    df_train = drop_post_feature(df_train)
+    df_test = df_test[list(df_train.columns)]
+
+    df_train = drop_missing_feature(df_train)
+    df_test = df_test[list(df_train.columns)]
+    df_test.fillna(value=999, inplace=True)
+
+    df_train = format_data(df_train)
+    df_test = format_data(df_test)
+
+    df_train_y = df_train['loan_status']
+    df_train_x = df_train.drop(['loan_status'], axis=1)
+    df_train_x = dimension_reduction(df_train_x)
+    df_train = pd.concat([df_train_x, df_train_y], axis=1)
+
+    df_train = vif(df_train, 10)
+    newDF, woeDF = iv_woe(df_train, 'loan_status')
+    del_feas = newDF[newDF.IV < 0.01].Variable.tolist()
+    df_train = df_train.drop(del_feas, axis=1)
+    df_test = df_test[list(df_train.columns)]
+
+    df_train_y = df_train['loan_status']
+    df_train_x = df_train.drop(['loan_status'], axis=1)
+    df_test_y = df_test['loan_status']
+    df_test_x = df_test.drop(['loan_status'], axis=1)
+
+    df_train_x, df_test_x = feature_engineering(df_train_x, df_train_y, df_test_x)
+
+    df_train_x.to_csv('x_train.csv')
+    df_train_y.to_csv('y_train.csv')
+    df_test_x.to_csv('x_test.csv')
+    df_test_y.to_csv('y_test.csv')
