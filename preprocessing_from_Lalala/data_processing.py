@@ -129,17 +129,18 @@ def vif(x, threshold):
     return x[col_save]
 
 
-def feature_engineering(df_training, df_target):
+def feature_engineering(df_train_x, df_train_y, df_test_x):
     binning_feature = []
-    for col in df_training.columns:
-        if df_training[col].nunique() > 15:
+    for col in df_train_x.columns:
+        if df_train_x[col].nunique() > 15:
             binning_feature.append(col)
 
     for feature in binning_feature:
-        splits = min(50, df_training[feature].nunique())
-        n = df_training[feature].nunique()
-        df_training[feature] = chi_merge(df_training[feature], df_target, splits=splits, max_pvalue=0.05)
-        print(feature + ':', n, df_training[feature].nunique())
+        splits = min(50, df_train_x[feature].nunique())
+        n = df_train_x[feature].nunique()
+        df_train_x[feature], df_test_x[feature] = chi_merge(df_train_x[feature], df_train_y, df_test_x[feature], splits=splits,
+                                                   max_pvalue=0.05)
+        print(feature + ':', n, df_train_x[feature].nunique())
 
     # for feature in binning_feature:
     #     # print(feature, sqrt(df[feature].var()) * 1.0 / df[feature].mean())
@@ -151,7 +152,7 @@ def feature_engineering(df_training, df_target):
     # plt.plot(list(tmp.sort_values()))
     # plt.show()
 
-    return df_training
+    return df_train_x, df_test_x
 
 
 def tagcount(series, tags):
@@ -165,7 +166,7 @@ def tagcount(series, tags):
     return result
 
 
-def chi_merge(feature, target, splits, max_pvalue=0.1, max_iter=15, min_iter=2):
+def chi_merge(feature, target, feature_test, splits, max_pvalue=0.1, max_iter=15, min_iter=2):
     tags = [0, 1]
     percent = feature.quantile([1.0 * i / splits for i in range(splits + 1)], interpolation="lower")\
         .drop_duplicates(keep="last").tolist()
@@ -240,13 +241,16 @@ def chi_merge(feature, target, splits, max_pvalue=0.1, max_iter=15, min_iter=2):
 
     val = 0
     feature = feature.apply(lambda x: val if x <= np_regroup[0, 0] else x)
+    feature_test = feature_test.apply(lambda x: val if x <= np_regroup[0, 0] else x)
     val += 1
     for i in range(1, np_regroup.shape[0] - 1):
         feature = feature.apply(lambda x: val if np_regroup[i - 1, 0] < x <= np_regroup[i, 0] else x)
+        feature_test = feature_test.apply(lambda x: val if np_regroup[i - 1, 0] < x <= np_regroup[i, 0] else x)
         val += 1
     feature = feature.apply(lambda x: val if x > np_regroup[np_regroup.shape[0] - 2, 0] else x)
+    feature_test = feature_test.apply(lambda x: val if x > np_regroup[np_regroup.shape[0] - 2, 0] else x)
 
-    return feature
+    return feature, feature_test
 
 
 def iv_woe(data, target, bins=10):
