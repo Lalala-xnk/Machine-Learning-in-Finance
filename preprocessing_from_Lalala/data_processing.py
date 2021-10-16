@@ -18,7 +18,7 @@ warnings.filterwarnings('ignore')
 
 
 def read_csv(path):
-    df = pd.read_csv(path, header=1, low_memory=False)
+    df = pd.read_csv(path, header=0, low_memory=False)
     df.drop(df.tail(2).index, inplace=True)
     return df
 
